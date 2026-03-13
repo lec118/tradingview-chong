@@ -398,10 +398,14 @@ if i_show_dash and barstate.islast
                text_color=bc >= i_min_conf ? color.new(C_BUY, 0) : bc >= 60 ? color.new(#ffab40, 0) : C_TXT_DIM,
                text_size=size.tiny)
 
-    table.cell(dash, 0, 8, "큰 흐름", text_color=C_TXT_DIM, text_size=size.tiny)
-    table.cell(dash, 1, 8, htf_bull ? "▲ 상승장" : htf_bear ? "▼ 하락장" : "— 횡보",
-               text_color=htf_bull ? color.new(C_BUY, 0) : htf_bear ? color.new(C_SELL, 0) : C_TXT_DIM,
-               text_size=size.tiny)
+    // ── 시장 국면 (큰 흐름 대체) ──
+    bool is_kr = str.contains(syminfo.prefix, "KRX") or str.contains(syminfo.prefix, "KOSPI") or str.contains(syminfo.prefix, "KOSDAQ")
+    string phase_txt = is_kr ? kr_full : us_full
+    color  phase_clr = is_kr ? kr_clr  : us_clr
+    string phase_lbl = is_kr ? "🇰🇷 현재 국면" : "🇺🇸 현재 국면"
+    table.cell(dash, 0, 8, phase_lbl, text_color=C_TXT_DIM, text_size=size.tiny)
+    table.cell(dash, 1, 8, phase_txt + (htf_bull ? " ▲" : htf_bear ? " ▼" : ""),
+               text_color=phase_clr, text_size=size.tiny)
 
     table.cell(dash, 0, 9, "할인율", text_color=C_TXT_DIM, text_size=size.tiny)
     mos_txt = mos_raw > 10 ? str.tostring(mos_raw, "#.1") + "% 🏷" : mos_raw > 0 ? str.tostring(mos_raw, "#.1") + "%" : "비싼 구간"
