@@ -340,7 +340,7 @@ get_season_info(string season, string kr_spring, string kr_summer, string kr_fal
         "겨울" => color.new(#42a5f5, 0)
         => color.new(#9e9e9e, 0)
     sector = switch season
-        "봄"  => "반도체·조선·방산·금융·제약·화장품"
+        "봄"  => "반도체·SSD·조선·방산·금융·제약"
         "여름" => "반도체·소비재·플랫폼·게임·2차전지"
         "가을" => "에너지·화학·유틸·건설·통신"
         "겨울" => "채권·금·현금"
