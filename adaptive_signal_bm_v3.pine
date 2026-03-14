@@ -1,345 +1,122 @@
 // ═══════════════════════════════════════════════════════
-// 📊 Adaptive Signal — Buffett-Munger Edition v3
+// 📊 Adaptive Signal — Buffett-Munger Edition v4
 // ═══════════════════════════════════════════════════════
 // 롱 전용 현물 매매 (주식 · ETF · 암호화폐)
 //
-// 진입: 정석매수 | 급락매수 | 반등초기 | 공포매수
-// 청산: 손절 > 수익보호 > 추세전환
+// 매수: 2주봉 SMA200 터치 + RSI ≤ 30
+// 매도: 2주봉 RSI ≥ 80  |  손절: -5%
 // ═══════════════════════════════════════════════════════
 
 //@version=6
-indicator("📊 Adaptive Signal — BM v3", overlay=true,
-         max_labels_count=500, max_lines_count=500)
+indicator("📊 Adaptive Signal — BM v4", overlay=true, max_labels_count=500)
 
 
 // ── 컬러 ──
-C_BUY      = #00e676
-C_SELL     = #ff5252
-C_ENTRY_LN = color.new(#42a5f5, 30)
-C_SL_LN    = color.new(#ff5252, 50)
-C_TRAIL_LN = color.new(#ffab40, 50)
-C_TBL_BG   = color.new(#1e1e2f, 10)
-C_TBL_BD   = color.new(#2d2d44, 0)
-C_TXT_DIM  = color.new(#9e9e9e, 0)
+C_BUY    = #00e676
+C_SELL   = #ff5252
+C_SL     = #ff9800
+C_TBL_BG = color.new(#1e1e2f, 10)
+C_TBL_BD = color.new(#2d2d44, 0)
+C_DIM    = color.new(#9e9e9e, 0)
+C_LIGHT  = color.new(#e0e0e0, 0)
 
 
-// ── 설정: 평균선 ──
-i_ema_fast  = input.int(20,   "단기 평균선 (20일)",   group="📈 평균선")
-i_ema_slow  = input.int(50,   "중기 평균선 (50일)",   group="📈 평균선")
-i_sma_long  = input.int(200,  "장기 평균선 (200일)",  group="📈 평균선")
+// ── 설정 ──
+i_sma_len  = input.int(200,  "SMA 기간",     group="📈 지표")
+i_rsi_len  = input.int(14,   "RSI 기간",     group="📈 지표")
+i_sl_pct   = input.float(5.0,"손절 %", step=0.5, group="📈 지표",
+             tooltip="매수가 대비 이만큼 하락 시 손절")
 
-// ── 설정: 추세선 ──
-i_st_factor = input.float(3.0,"추세 민감도 (수동)", step=0.5, group="📈 추세선",
-              tooltip="숫자가 클수록 둔감 = 신호 적음")
-i_st_atr    = input.int(7,    "추세 기간 (수동)",             group="📈 추세선")
-i_st_auto   = input.bool(true,"차트별 자동 조정",             group="📈 추세선",
-              tooltip="ON이면 4시간/일봉/주봉에 맞게 자동 세팅")
-
-// ── 설정: 신호 조건 ──
-i_htf       = input.timeframe("W", "큰 흐름 기준",    group="🔍 신호 조건",
-              tooltip="4시간·일봉 차트→W(주봉)  주봉 차트→M(월봉)")
-i_adx_len   = input.int(14,  "추세강도 계산기간",     group="🔍 신호 조건")
-i_adx_min   = input.int(20,  "최소 추세강도",         group="🔍 신호 조건",
-              tooltip="추세가 이 수치 이상이어야 매수 허용")
-i_min_conf  = input.int(80,  "최소 매수 점수",  minval=0, maxval=120, group="🔍 신호 조건",
-              tooltip="점수가 높을수록 엄격 (기본 80, 최대 120)")
-i_cd_manual = input.int(20,  "신호 간 최소 간격 (수동)", group="🔍 신호 조건",
-              tooltip="직전 신호 이후 최소 몇 봉 지나야 다음 신호 허용")
-i_cd_auto   = input.bool(true,"차트별 자동 간격",     group="🔍 신호 조건",
-              tooltip="4시간→42봉(≈7일)  일봉→10봉(≈2주)  주봉→4봉(≈1개월)")
-i_vol_filt  = input.bool(true,"횡보장 거르기",        group="🔍 신호 조건",
-              tooltip="가격이 거의 안 움직이는 구간에서는 매수 차단")
-i_atr_min   = input.float(1.0,"최소 움직임 %", step=0.1, group="🔍 신호 조건")
-
-// ── 설정: 손실 방어 ──
-i_sl_pct    = input.float(3.0,"최대 손실 허용 %",  step=0.5, group="🛡 손실 방어",
-              tooltip="매수가 대비 이만큼 떨어지면 자동 손절")
-i_trail_pct = input.float(2.5,"수익 보호선 기본 %", step=0.5, group="🛡 손실 방어",
-              tooltip="고점 대비 이만큼 떨어지면 수익 확보 매도")
-i_adapt_tr  = input.bool(true,"수익 클수록 여유있게",          group="🛡 손실 방어",
-              tooltip="수익이 커질수록 보호선을 느슨하게 → 큰 추세를 오래 보유")
-i_rsi_ext   = input.int(25,  "급락 매수 기준 (RSI)",          group="🛡 손실 방어",
-              tooltip="RSI가 이 수치 이하면 다른 조건 면제하고 매수 허용")
-
-// ── 설정: 국면 ──
 i_kr_season = input.string("봄", "한국 국면",
-              options=["봄", "여름", "가을", "겨울"], group="🧭 국면 설정",
+              options=["봄","여름","가을","겨울"], group="🧭 국면",
               tooltip="봄=비관·회의  여름=낙관·희망  가을=도취·행복  겨울=공포·절망")
-i_kr_start  = input.int(2025, "한국 시작년도", group="🧭 국면 설정",
-              tooltip="현재 국면이 시작된 연도")
+i_kr_start  = input.int(2025, "한국 시작년도", group="🧭 국면")
 i_us_season = input.string("가을", "미국 국면",
-              options=["봄", "여름", "가을", "겨울"], group="🧭 국면 설정",
+              options=["봄","여름","가을","겨울"], group="🧭 국면",
               tooltip="봄=비관·회의  여름=낙관·희망  가을=도취·행복  겨울=공포·절망")
-i_us_start  = input.int(2024, "미국 시작년도", group="🧭 국면 설정",
-              tooltip="현재 국면이 시작된 연도")
-
-// ── 설정: 화면 표시 ──
-i_show_dash = input.bool(true,"현황판",                group="🎨 화면 표시")
-i_show_rib  = input.bool(true,"평균선 띠",             group="🎨 화면 표시")
-i_show_lvl  = input.bool(true,"매수가/손절/보호선",     group="🎨 화면 표시")
-i_show_htf  = input.bool(true,"큰 흐름 배경색",        group="🎨 화면 표시")
+i_us_start  = input.int(2024, "미국 시작년도", group="🧭 국면")
 
 
-// ── 지표 ──
-ema20      = ta.ema(close, i_ema_fast)
-ema50      = ta.ema(close, i_ema_slow)
-sma200     = ta.sma(close, i_sma_long)
-atr14      = ta.atr(14)
-rsi14      = ta.rsi(close, 14)
-rsi_rising = rsi14 > nz(rsi14[1])
-vol_avg    = ta.sma(volume, 20)
+// ══════════════════════════════════════
+// 지표
+// ══════════════════════════════════════
+sma200 = ta.sma(close, i_sma_len)
+atr14  = ta.atr(14)
+
+// 2주봉 (리페인팅 방지: [1] + lookahead off)
+w2_sma = request.security(syminfo.tickerid, "2W",
+         ta.sma(close, i_sma_len)[1], lookahead=barmerge.lookahead_off)
+w2_rsi = request.security(syminfo.tickerid, "2W",
+         ta.rsi(close, i_rsi_len)[1], lookahead=barmerge.lookahead_off)
+w2_low = request.security(syminfo.tickerid, "2W",
+         low[1], lookahead=barmerge.lookahead_off)
+
+// 주봉 RSI (대시보드 참고용)
+w_rsi  = request.security(syminfo.tickerid, "W",
+         ta.rsi(close, i_rsi_len)[1], lookahead=barmerge.lookahead_off)
 
 
-// ── 평균선 시각화 ──
-p1 = plot(ema20, "단기 평균선", color.new(#42a5f5, 40), linewidth=1)
-p2 = plot(ema50, "중기 평균선", color.new(#ab47bc, 40), linewidth=1)
-plot(sma200, "장기 평균선", color.new(#78909c, 50), linewidth=2, style=plot.style_circles)
+// ══════════════════════════════════════
+// 시그널
+// ══════════════════════════════════════
+var bool  in_pos  = false
+var float e_price = na
 
-fill(p1, p2,
-     color = i_show_rib ? (ema20 > ema50 ? color.new(#42a5f5, 88) : color.new(#ab47bc, 88)) : na,
-     title = "평균선 띠")
+bool buy_sig  = not in_pos and not na(w2_sma) and not na(w2_low) and w2_low <= w2_sma and nz(w2_rsi) <= 30
+bool sell_sig = in_pos and nz(w2_rsi) >= 80
+bool sl_sig   = in_pos and not sell_sig and not na(e_price) and close <= e_price * (1 - i_sl_pct / 100)
+bool exit_sig = sell_sig or sl_sig
 
-
-// ── 차트별 자동 파라미터 ──
-tf_s = timeframe.in_seconds()
-st_f = i_st_auto ? (tf_s <= 14400 ? 4.5 : tf_s <= 86400 ? 3.5 : 3.0) : i_st_factor
-st_a = i_st_auto ? (tf_s <= 14400 ? 12  : tf_s <= 86400 ? 10  : 7)   : i_st_atr
-cd_v = i_cd_auto ? (tf_s <= 14400 ? 42  : tf_s <= 86400 ? 10  : 4)   : i_cd_manual
-int yb = math.max(math.round(252.0 * 86400.0 / tf_s), 50)
-yb := math.min(yb, 5000)
-
-
-// ── 추세선 (Supertrend) ──
-[st_val, st_dir] = ta.supertrend(st_f, st_a)
-raw_buy  = ta.change(st_dir) < 0
-raw_sell = ta.change(st_dir) > 0
-
-p_st = plot(st_val, "추세선",
-       st_dir < 0 ? color.new(C_BUY, 60) : color.new(C_SELL, 60),
-       linewidth=2, style=plot.style_linebr)
-p_cl = plot(close, "종가", na, display=display.none)
-
-fill(p_cl, p_st,
-     color = st_dir < 0 ? color.new(C_BUY, 93) : color.new(C_SELL, 93),
-     title = "추세 영역")
-
-
-// ── 큰 흐름 확인 (리페인팅 방지) ──
-htf_st   = request.security(syminfo.tickerid, i_htf, st_dir[1], lookahead=barmerge.lookahead_off)
-htf_bull = nz(htf_st) < 0
-htf_bear = nz(htf_st) > 0
-
-bgcolor(i_show_htf ? (htf_bull ? color.new(C_BUY, 96) : htf_bear ? color.new(C_SELL, 96) : na) : na,
-        title="큰 흐름 배경")
-
-
-// ── 추세강도 ──
-[_, _, adx_v] = ta.dmi(i_adx_len, i_adx_len)
-trend_ok = adx_v >= i_adx_min
-
-
-// ── 횡보 감지 · 공포 감지 · 할인율 ──
-atr_pct  = nz(atr14 / close * 100)
-low_vol  = i_vol_filt and atr_pct < i_atr_min
-
-float vol1  = nz(volume[1])
-float vavg1 = nz(vol_avg[1])
-float cl1   = nz(close[1])
-float cl2   = nz(close[2])
-bool cap_prev = vol1 > vavg1 * 2.0 and cl1 < cl2 * 0.95 and nz(rsi14[1]) < 35
-
-mos_raw   = na(sma200) ? 0.0 : (sma200 - close) / sma200 * 100
-mos_score = mos_raw > 20 ? 20.0 : mos_raw > 10 ? 15.0 : mos_raw > 5 ? 10.0 : mos_raw > 0 ? 5.0 : 0.0
-
-
-// ── 매수 점수 (5항목×20 + 할인 보너스) ──
-hi52   = ta.highest(high, yb)
-pct_hi = na(hi52) or hi52 == 0 ? 0.0 : (hi52 - close) / hi52 * 100
-
-float bc = 0.0
-bc += (rsi14 < 40 and rsi_rising) ? 20 : rsi14 < 50 ? 10 : rsi14 < 60 ? 5 : 0
-bc += ema20 > ema50 ? 20 : 10
-bc += (not na(sma200) and close > sma200) ? 20 : 10
-bc += nz(volume) > nz(vol_avg) ? 20 : nz(volume) > nz(vol_avg) * 0.7 ? 10 : 0
-bc += pct_hi > 15 ? 20 : pct_hi > 10 ? 15 : pct_hi > 5 ? 10 : 0
-bc += mos_score
-
-
-// ── 상태 ──
-var bool  in_pos   = false
-var int   b_since  = 0
-var float e_price  = na
-var float hi_track = na
-
-b_since += 1
-
-if in_pos and not na(hi_track)
-    hi_track := math.max(hi_track, high)
-
-float roi    = in_pos and not na(e_price) ? (close - e_price) / e_price * 100 : 0.0
-string roi_t = (roi >= 0 ? "+" : "") + str.tostring(roi, "#.1") + "%"
-
-float tr_pct = i_adapt_tr ?
-     (roi < 10 ? i_trail_pct : roi < 30 ? i_trail_pct + 2.5 : roi < 100 ? i_trail_pct + 5.5 : i_trail_pct + 9.5) :
-     i_trail_pct
-
-
-// ── 매수 · 매도 ──
-bool   buy_sig  = false
-bool   sell_sig = false
-string sig_type = ""
-
-if not in_pos
-    c_normal = raw_buy and htf_bull and trend_ok and b_since >= cd_v and bc >= i_min_conf and not low_vol
-    c_rsi    = rsi14 <= i_rsi_ext and raw_buy and htf_bull
-    c_early  = raw_buy and rsi14 < 40 and trend_ok and b_since >= cd_v and not low_vol
-    c_fear   = raw_buy and cap_prev and rsi_rising and htf_bull
-
-    if c_rsi
-        buy_sig  := true
-        sig_type := "급락매수"
-    else if c_fear
-        buy_sig  := true
-        sig_type := "공포매수"
-    else if c_early
-        buy_sig  := true
-        sig_type := "반등초기"
-    else if c_normal
-        buy_sig  := true
-        sig_type := "정석매수"
-
-if in_pos
-    hit_sl    = not na(e_price) and close <= e_price * (1 - i_sl_pct / 100)
-    hit_trail = not na(hi_track) and close <= hi_track * (1 - tr_pct / 100)
-
-    if hit_sl
-        sell_sig := true
-        sig_type := "손절"
-    else if hit_trail
-        sell_sig := true
-        sig_type := "수익보호"
-    else if raw_sell
-        sell_sig := true
-        sig_type := "추세전환"
-
-bool euphoria = in_pos
-     and rsi14 > 75
-     and nz(volume) > nz(vol_avg) * 1.8
-     and not na(sma200)
-     and close > sma200 * 1.5
-     and not sell_sig
-
-
-// ── 바 하이라이트 ──
-bgcolor(buy_sig  ? color.new(C_BUY,  85) : na, title="매수 바")
-bgcolor(sell_sig ? color.new(C_SELL, 85) : na, title="매도 바")
-
-
-// ── 라벨 ──
-float lbl_off = nz(atr14) * 2.2
+float exit_roi = exit_sig and not na(e_price) ? (close - e_price) / e_price * 100 : na
 
 if buy_sig
-    lbl_c = switch sig_type
-        "급락매수" => color.new(#00bcd4, 0)
-        "공포매수" => color.new(#7c4dff, 0)
-        "반등초기" => color.new(#ff9800, 0)
-        =>            color.new(C_BUY, 0)
-
-    label.new(bar_index, low - lbl_off,
-         sig_type + " " + str.tostring(math.round(bc)) + "점",
-         style=label.style_label_up, color=lbl_c,
-         textcolor=color.white, size=size.normal)
-
-if sell_sig
-    lbl_c = sig_type == "손절" ? color.new(#ff1744, 0) : color.new(C_SELL, 0)
-
-    label.new(bar_index, high + lbl_off,
-         sig_type,
-         style=label.style_label_down, color=lbl_c,
-         textcolor=color.white, size=size.normal)
-
-    label.new(bar_index, high + nz(atr14) * 5.0,
-         roi_t,
-         style=label.style_label_center,
-         color=roi >= 0 ? color.new(C_BUY, 20) : color.new(C_SELL, 20),
-         textcolor=color.white, size=size.large)
-
-if euphoria
-    label.new(bar_index, high + nz(atr14) * 1.5,
-         "⚠ 과열주의", style=label.style_label_down,
-         color=color.new(#ffab40, 10), textcolor=#1e1e2f, size=size.small)
+    in_pos  := true
+    e_price := close
+if exit_sig
+    in_pos  := false
+    e_price := na
 
 
-// ── 라인 헬퍼 ──
-delete_line(line ln) =>
-    if not na(ln)
-        line.delete(ln)
-    line(na)
+// ══════════════════════════════════════
+// 차트 시각화
+// ══════════════════════════════════════
+plot(sma200, "SMA200", color.new(#e0e0e0, 20), linewidth=3)
+
+plotshape(buy_sig,  title="매수", style=shape.circle,  location=location.belowbar, color=color.new(C_BUY, 0),  size=size.tiny)
+plotshape(sell_sig, title="매도", style=shape.circle,  location=location.abovebar, color=color.new(C_SELL, 0), size=size.tiny)
+plotshape(sl_sig,   title="손절", style=shape.xcross,  location=location.abovebar, color=color.new(C_SL, 0),   size=size.tiny)
+
+if exit_sig and not na(exit_roi)
+    label.new(bar_index, high + nz(atr14) * 2.5,
+         (exit_roi >= 0 ? "+" : "") + str.tostring(exit_roi, "#.1") + "%",
+         style=label.style_label_down,
+         color=exit_roi >= 0 ? color.new(C_BUY, 20) : color.new(C_SELL, 20),
+         textcolor=color.white, size=size.small)
 
 
-// ── 매수가/손절/보호선 라인 ──
-var line ln_entry = na
-var line ln_sl    = na
-var line ln_trail = na
-
-if i_show_lvl
-    if buy_sig
-        ln_entry := delete_line(ln_entry)
-        ln_sl    := delete_line(ln_sl)
-        ln_trail := delete_line(ln_trail)
-        sl_px    = close * (1 - i_sl_pct / 100)
-        ln_entry := line.new(bar_index, close, bar_index + 1, close,
-                    extend=extend.right, color=C_ENTRY_LN, style=line.style_solid, width=1)
-        ln_sl    := line.new(bar_index, sl_px, bar_index + 1, sl_px,
-                    extend=extend.right, color=C_SL_LN, style=line.style_dotted, width=1)
-
-    if in_pos and not na(hi_track) and not sell_sig
-        ln_trail := delete_line(ln_trail)
-        tr_px    = hi_track * (1 - tr_pct / 100)
-        ln_trail := line.new(bar_index - 1, tr_px, bar_index, tr_px,
-                    extend=extend.right, color=C_TRAIL_LN, style=line.style_dashed, width=1)
-
-    if sell_sig
-        ln_entry := delete_line(ln_entry)
-        ln_sl    := delete_line(ln_sl)
-        ln_trail := delete_line(ln_trail)
-
-
-// ── 상태 업데이트 ──
-if buy_sig
-    in_pos   := true
-    e_price  := close
-    hi_track := close
-    b_since  := 0
-
-if sell_sig
-    in_pos   := false
-    e_price  := na
-    hi_track := na
-    b_since  := 0
-
-
-// ── 국면 헬퍼 ──
-get_season_info(string season, string kr_spring, string kr_summer, string kr_fall, string kr_winter) =>
-    dur = switch season
+// ══════════════════════════════════════
+// 대시보드 헬퍼
+// ══════════════════════════════════════
+get_season(string s, string sp, string su, string fa, string wi) =>
+    dur = switch s
         "봄"  => "2~3년"
         "여름" => "3~4년"
         "가을" => "1~2년"
         "겨울" => "2~3년"
         => ""
-    phase = switch season
-        "봄"  => kr_spring
-        "여름" => kr_summer
-        "가을" => kr_fall
-        "겨울" => kr_winter
+    phase = switch s
+        "봄"  => sp
+        "여름" => su
+        "가을" => fa
+        "겨울" => wi
         => ""
-    clr = switch season
+    clr = switch s
         "봄"  => color.new(#00e676, 0)
         "여름" => color.new(#00e676, 0)
         "가을" => color.new(#ffab40, 0)
         "겨울" => color.new(#42a5f5, 0)
         => color.new(#9e9e9e, 0)
-    sector = switch season
+    sector = switch s
         "봄"  => "반도체·SSD·조선·방산·금융·제약"
         "여름" => "반도체·소비재·플랫폼·게임·2차전지"
         "가을" => "에너지·화학·유틸·건설·통신"
@@ -347,74 +124,76 @@ get_season_info(string season, string kr_spring, string kr_summer, string kr_fal
         => ""
     [phase, dur, clr, sector]
 
+rsi_txt(float v, float hi, float lo) =>
+    nz(v) >= hi ? str.tostring(v, "#.0") + " 🔥"
+  : nz(v) <= lo ? str.tostring(v, "#.0") + " 🧊"
+  : str.tostring(v, "#.0")
 
-// ── 현황판 ──
-var table dash = table.new(position.top_right, 2, 10,
+rsi_clr(float v, float hi, float lo) =>
+    nz(v) >= hi ? color.new(C_SELL, 0) : nz(v) <= lo ? color.new(C_BUY, 0) : C_LIGHT
+
+
+// ══════════════════════════════════════
+// 대시보드
+// ══════════════════════════════════════
+var table dash = table.new(position.top_right, 2, 9,
                  bgcolor=C_TBL_BG, border_color=C_TBL_BD, border_width=1,
                  frame_color=C_TBL_BD, frame_width=1)
 
-if i_show_dash and barstate.islast
-    table.cell(dash, 0, 0, "📊 BM Signal", text_color=color.white, text_size=size.small,
+if barstate.islast
+    // 헤더
+    table.cell(dash, 0, 0, "📊 BM v4", text_color=color.white, text_size=size.small,
                bgcolor=color.new(#42a5f5, 20))
-    table.cell(dash, 1, 0, timeframe.period, text_color=C_TXT_DIM, text_size=size.small,
+    table.cell(dash, 1, 0, timeframe.period, text_color=C_DIM, text_size=size.small,
                bgcolor=color.new(#42a5f5, 20))
 
-    // ── 한국 국면 ──
-    int kr_yr = year - i_kr_start + 1
-    [kr_phase, kr_dur, kr_clr, kr_sector] = get_season_info(i_kr_season,
+    // 한국 국면
+    [kr_ph, kr_dur, kr_clr, kr_sec] = get_season(i_kr_season,
          "🌸 4기 봄", "☀️ 4기 여름", "🍂 4기 가을", "❄️ 4기 겨울")
-    kr_full = kr_phase + " (" + str.tostring(kr_yr) + "/" + kr_dur + ")"
+    kr_full = kr_ph + " (" + str.tostring(year - i_kr_start + 1) + "/" + kr_dur + ")"
+    table.cell(dash, 0, 1, "🇰🇷 국면",   text_color=C_DIM,  text_size=size.tiny)
+    table.cell(dash, 1, 1, kr_full,      text_color=kr_clr, text_size=size.tiny)
+    table.cell(dash, 0, 2, "🇰🇷 주도업종", text_color=C_DIM,  text_size=size.tiny)
+    table.cell(dash, 1, 2, kr_sec,       text_color=kr_clr, text_size=size.tiny)
 
-    table.cell(dash, 0, 1, "🇰🇷 국면", text_color=C_TXT_DIM, text_size=size.tiny)
-    table.cell(dash, 1, 1, kr_full, text_color=kr_clr, text_size=size.tiny)
-    table.cell(dash, 0, 2, "🇰🇷 주도업종", text_color=C_TXT_DIM, text_size=size.tiny)
-    table.cell(dash, 1, 2, kr_sector, text_color=kr_clr, text_size=size.tiny)
-
-    // ── 미국 국면 ──
-    int us_yr = year - i_us_start + 1
-    [us_phase, us_dur, us_clr, us_sector] = get_season_info(i_us_season,
+    // 미국 국면
+    [us_ph, us_dur, us_clr, us_sec] = get_season(i_us_season,
          "🌸 8기 봄", "☀️ 7기 여름", "🍂 7기 가을", "❄️ 7기 겨울")
-    us_full = us_phase + " (" + str.tostring(us_yr) + "/" + us_dur + ")"
+    us_full = us_ph + " (" + str.tostring(year - i_us_start + 1) + "/" + us_dur + ")"
+    table.cell(dash, 0, 3, "🇺🇸 국면",   text_color=C_DIM,  text_size=size.tiny)
+    table.cell(dash, 1, 3, us_full,      text_color=us_clr, text_size=size.tiny)
+    table.cell(dash, 0, 4, "🇺🇸 주도업종", text_color=C_DIM,  text_size=size.tiny)
+    table.cell(dash, 1, 4, us_sec,       text_color=us_clr, text_size=size.tiny)
 
-    table.cell(dash, 0, 3, "🇺🇸 국면", text_color=C_TXT_DIM, text_size=size.tiny)
-    table.cell(dash, 1, 3, us_full, text_color=us_clr, text_size=size.tiny)
-    table.cell(dash, 0, 4, "🇺🇸 주도업종", text_color=C_TXT_DIM, text_size=size.tiny)
-    table.cell(dash, 1, 4, us_sector, text_color=us_clr, text_size=size.tiny)
+    // 2주봉 RSI
+    table.cell(dash, 0, 5, "2주 RSI", text_color=C_DIM, text_size=size.tiny)
+    table.cell(dash, 1, 5, rsi_txt(w2_rsi, 80, 30), text_color=rsi_clr(w2_rsi, 80, 30), text_size=size.tiny)
 
-    // ── 기술 지표 ──
-    table.cell(dash, 0, 5, "과열/과냉", text_color=C_TXT_DIM, text_size=size.tiny)
-    rsi_txt = rsi14 > 70 ? str.tostring(rsi14, "#.0") + " 🔥" : rsi14 < 30 ? str.tostring(rsi14, "#.0") + " 🧊" : str.tostring(rsi14, "#.0")
-    table.cell(dash, 1, 5, rsi_txt,
-               text_color=rsi14 > 70 ? color.new(C_SELL, 0) : rsi14 < 30 ? color.new(C_BUY, 0) : color.new(#e0e0e0, 0),
+    // 주봉 RSI
+    table.cell(dash, 0, 6, "주봉 RSI", text_color=C_DIM, text_size=size.tiny)
+    table.cell(dash, 1, 6, rsi_txt(w_rsi, 80, 30), text_color=rsi_clr(w_rsi, 80, 30), text_size=size.tiny)
+
+    // 포지션
+    table.cell(dash, 0, 7, "포지션", text_color=C_DIM, text_size=size.tiny)
+    float roi = in_pos and not na(e_price) ? (close - e_price) / e_price * 100 : na
+    string pos_txt = not in_pos ? "— 대기"
+                   : str.tostring(e_price, "#.0") + " → " + (roi >= 0 ? "+" : "") + str.tostring(roi, "#.1") + "%"
+    table.cell(dash, 1, 7, pos_txt,
+               text_color=not in_pos ? C_DIM : roi >= 0 ? color.new(C_BUY, 0) : color.new(C_SELL, 0),
                text_size=size.tiny)
 
-    table.cell(dash, 0, 6, "추세강도", text_color=C_TXT_DIM, text_size=size.tiny)
-    adx_txt = trend_ok ? str.tostring(adx_v, "#.0") + " 💪" : str.tostring(adx_v, "#.0") + " 😴"
-    table.cell(dash, 1, 6, adx_txt,
-               text_color=trend_ok ? color.new(C_BUY, 0) : C_TXT_DIM, text_size=size.tiny)
-
-    table.cell(dash, 0, 7, "매수 점수", text_color=C_TXT_DIM, text_size=size.tiny)
-    table.cell(dash, 1, 7, str.tostring(math.round(bc)) + "점",
-               text_color=bc >= i_min_conf ? color.new(C_BUY, 0) : bc >= 60 ? color.new(#ffab40, 0) : C_TXT_DIM,
-               text_size=size.tiny)
-
-    // ── 시장 국면 (큰 흐름 대체) ──
-    bool is_kr = str.contains(syminfo.prefix, "KRX") or str.contains(syminfo.prefix, "KOSPI") or str.contains(syminfo.prefix, "KOSDAQ")
-    string phase_txt = is_kr ? kr_full : us_full
-    color  phase_clr = is_kr ? kr_clr  : us_clr
-    string phase_lbl = is_kr ? "🇰🇷 현재 국면" : "🇺🇸 현재 국면"
-    table.cell(dash, 0, 8, phase_lbl, text_color=C_TXT_DIM, text_size=size.tiny)
-    table.cell(dash, 1, 8, phase_txt + (htf_bull ? " ▲" : htf_bear ? " ▼" : ""),
-               text_color=phase_clr, text_size=size.tiny)
-
-    table.cell(dash, 0, 9, "할인율", text_color=C_TXT_DIM, text_size=size.tiny)
-    mos_txt = mos_raw > 10 ? str.tostring(mos_raw, "#.1") + "% 🏷" : mos_raw > 0 ? str.tostring(mos_raw, "#.1") + "%" : "비싼 구간"
-    table.cell(dash, 1, 9, mos_txt,
-               text_color=mos_raw > 10 ? color.new(C_BUY, 0) : mos_raw > 0 ? color.new(#ffab40, 0) : C_TXT_DIM,
+    // SMA200 괴리율 (할인율 통합)
+    sma_gap = na(sma200) ? 0.0 : (close - sma200) / sma200 * 100
+    string gap_txt = (sma_gap >= 0 ? "+" : "") + str.tostring(sma_gap, "#.1") + "%"
+    gap_txt := sma_gap < -10 ? gap_txt + " 🏷" : sma_gap < 0 ? gap_txt + " 📉" : gap_txt
+    table.cell(dash, 0, 8, "SMA200", text_color=C_DIM, text_size=size.tiny)
+    table.cell(dash, 1, 8, gap_txt,
+               text_color=sma_gap < -10 ? color.new(C_BUY, 0) : sma_gap < 0 ? color.new(#ffab40, 0)
+                        : sma_gap > 20 ? color.new(C_SELL, 0) : C_LIGHT,
                text_size=size.tiny)
 
 
 // ── 알림 ──
-alertcondition(buy_sig,  title="매수", message="📗 {{ticker}} 매수 @{{close}}")
-alertcondition(sell_sig, title="매도", message="📕 {{ticker}} 매도 @{{close}}")
-alertcondition(euphoria, title="과열", message="⚠️ {{ticker}} 과열 @{{close}}")
+alertcondition(buy_sig,  title="매수 (2W SMA200+RSI≤30)", message="📗 {{ticker}} 2주봉 SMA200 터치 + RSI≤30 @{{close}}")
+alertcondition(sell_sig, title="매도 (2W RSI≥80)",        message="📕 {{ticker}} 2주봉 RSI 80이상 @{{close}}")
+alertcondition(sl_sig,   title="손절",                    message="🛑 {{ticker}} 손절 @{{close}}")
