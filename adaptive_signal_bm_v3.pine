@@ -13,14 +13,16 @@ indicator("📊 Adaptive Signal — BM v4", overlay=true)
 // ── 컬러 ──
 C_BUY   = #00e676
 C_SELL  = #ff5252
+C_WARN  = #ffab40
 C_NEXT  = #42a5f5
 C_DIM   = color.new(#9e9e9e, 0)
 C_LIGHT = color.new(#e0e0e0, 0)
 
-// ── 설정 ──
-i_sma_len  = input.int(200, "SMA 기간", group="📈 지표")
-i_rsi_len  = input.int(14,  "RSI 기간", group="📈 지표")
+// ── 설정: 지표 ──
+i_sma_len = input.int(200, "SMA 기간", group="📈 지표")
+i_rsi_len = input.int(14,  "RSI 기간", group="📈 지표")
 
+// ── 설정: 국면 ──
 i_kr_season = input.string("봄", "한국 국면",
               options=["봄", "여름", "가을", "겨울"], group="🧭 국면",
               tooltip="봄=비관·회의  여름=낙관·희망  가을=도취·행복  겨울=공포·절망")
@@ -29,6 +31,17 @@ i_us_season = input.string("가을", "미국 국면",
               options=["봄", "여름", "가을", "겨울"], group="🧭 국면",
               tooltip="봄=비관·회의  여름=낙관·희망  가을=도취·행복  겨울=공포·절망")
 i_us_start  = input.int(2024, "미국 시작년도", group="🧭 국면")
+
+// ── 설정: 전조현상 TOP9 (수동 체크) ──
+i_p1 = input.bool(true,  "① 원화 약세 전환",           group="🚨 전조현상 TOP9")
+i_p2 = input.bool(true,  "② 금리 상승 3년차+",         group="🚨 전조현상 TOP9")
+i_p3 = input.bool(true,  "③ 신용 스프레드 확대",       group="🚨 전조현상 TOP9")
+i_p4 = input.bool(true,  "④ 자산 동시 팽창 후 균열",   group="🚨 전조현상 TOP9")
+i_p5 = input.bool(true,  "⑤ ISM 제조업 3년차",         group="🚨 전조현상 TOP9")
+i_p6 = input.bool(true,  "⑥ 신용융자 급증",            group="🚨 전조현상 TOP9")
+i_p7 = input.bool(true,  "⑦ 유동성 증가율 감소",       group="🚨 전조현상 TOP9")
+i_p8 = input.bool(false, "⑧ 상승각도+거래량 폭증",     group="🚨 전조현상 TOP9")
+i_p9 = input.bool(true,  "⑨ VIX/TED/CDS 급등",         group="🚨 전조현상 TOP9")
 
 // ── 지표 ──
 sma200 = ta.sma(close, i_sma_len)
@@ -110,8 +123,13 @@ next_season(string s) =>
         "겨울" => "봄"
         => ""
 
+// ── 전조현상 집계 ──
+int precursor_count = (i_p1 ? 1 : 0) + (i_p2 ? 1 : 0) + (i_p3 ? 1 : 0) +
+                      (i_p4 ? 1 : 0) + (i_p5 ? 1 : 0) + (i_p6 ? 1 : 0) +
+                      (i_p7 ? 1 : 0) + (i_p8 ? 1 : 0) + (i_p9 ? 1 : 0)
+
 // ── 현황판 ──
-var table dash = table.new(position.top_right, 2, 11,
+var table dash = table.new(position.top_right, 2, 12,
                  bgcolor=color.new(#1e1e2f, 10), border_color=color.new(#2d2d44, 0),
                  border_width=1, frame_color=color.new(#2d2d44, 0), frame_width=1)
 
@@ -125,11 +143,12 @@ if barstate.islast
     // 🇰🇷 국면
     int kr_yr = year - i_kr_start + 1
     int kr_stg = season_stage(i_kr_season, kr_yr)
-    string kr_ph = season_phase(i_kr_season, "🌸 4기 봄", "☀️ 4기 여름", "🍂 4기 가을", "❄️ 4기 겨울")
-    color  kr_clr = season_clr(i_kr_season)
+    color kr_clr = season_clr(i_kr_season)
 
     table.cell(dash, 0, 1, "🇰🇷 국면", text_color=C_DIM, text_size=size.tiny)
-    table.cell(dash, 1, 1, kr_ph + " (" + str.tostring(kr_yr) + "/" + season_dur(i_kr_season) + ") " + str.tostring(kr_stg) + "/10",
+    table.cell(dash, 1, 1,
+               season_phase(i_kr_season, "🌸 4기 봄", "☀️ 4기 여름", "🍂 4기 가을", "❄️ 4기 겨울") +
+               " (" + str.tostring(kr_yr) + "/" + season_dur(i_kr_season) + ") " + str.tostring(kr_stg) + "/10",
                text_color=kr_clr, text_size=size.tiny)
     table.cell(dash, 0, 2, "🇰🇷 주도업종", text_color=C_DIM, text_size=size.tiny)
     table.cell(dash, 1, 2, season_sector(i_kr_season), text_color=kr_clr, text_size=size.tiny)
@@ -145,11 +164,12 @@ if barstate.islast
     // 🇺🇸 국면
     int us_yr = year - i_us_start + 1
     int us_stg = season_stage(i_us_season, us_yr)
-    string us_ph = season_phase(i_us_season, "🌸 8기 봄", "☀️ 7기 여름", "🍂 7기 가을", "❄️ 7기 겨울")
-    color  us_clr = season_clr(i_us_season)
+    color us_clr = season_clr(i_us_season)
 
     table.cell(dash, 0, 4, "🇺🇸 국면", text_color=C_DIM, text_size=size.tiny)
-    table.cell(dash, 1, 4, us_ph + " (" + str.tostring(us_yr) + "/" + season_dur(i_us_season) + ") " + str.tostring(us_stg) + "/10",
+    table.cell(dash, 1, 4,
+               season_phase(i_us_season, "🌸 8기 봄", "☀️ 7기 여름", "🍂 7기 가을", "❄️ 7기 겨울") +
+               " (" + str.tostring(us_yr) + "/" + season_dur(i_us_season) + ") " + str.tostring(us_stg) + "/10",
                text_color=us_clr, text_size=size.tiny)
     table.cell(dash, 0, 5, "🇺🇸 주도업종", text_color=C_DIM, text_size=size.tiny)
     table.cell(dash, 1, 5, season_sector(i_us_season), text_color=us_clr, text_size=size.tiny)
@@ -162,26 +182,33 @@ if barstate.islast
         table.cell(dash, 0, 6, "", text_size=size.tiny)
         table.cell(dash, 1, 6, "", text_size=size.tiny)
 
+    // 🚨 전조현상 진행도
+    string pc_txt = str.tostring(precursor_count) + "/9"
+    pc_txt := precursor_count >= 7 ? pc_txt + " 🚨" : precursor_count >= 4 ? pc_txt + " ⚠️" : pc_txt
+    color pc_clr = precursor_count >= 7 ? color.new(C_SELL, 0) : precursor_count >= 4 ? color.new(C_WARN, 0) : color.new(C_BUY, 0)
+    table.cell(dash, 0, 7, "전조현상", text_color=C_DIM, text_size=size.tiny)
+    table.cell(dash, 1, 7, pc_txt, text_color=pc_clr, text_size=size.tiny)
+
     // 2주 RSI
-    table.cell(dash, 0, 7, "2주 RSI", text_color=C_DIM, text_size=size.tiny)
-    table.cell(dash, 1, 7,
+    table.cell(dash, 0, 8, "2주 RSI", text_color=C_DIM, text_size=size.tiny)
+    table.cell(dash, 1, 8,
                nz(w2_rsi) >= 80 ? str.tostring(w2_rsi, "#.0") + " 🔥" : nz(w2_rsi) <= 30 ? str.tostring(w2_rsi, "#.0") + " 🧊" : str.tostring(w2_rsi, "#.0"),
                text_color=nz(w2_rsi) >= 80 ? color.new(C_SELL, 0) : nz(w2_rsi) <= 30 ? color.new(C_BUY, 0) : C_LIGHT,
                text_size=size.tiny)
 
     // 주봉 RSI
-    table.cell(dash, 0, 8, "주봉 RSI", text_color=C_DIM, text_size=size.tiny)
-    table.cell(dash, 1, 8,
+    table.cell(dash, 0, 9, "주봉 RSI", text_color=C_DIM, text_size=size.tiny)
+    table.cell(dash, 1, 9,
                nz(w_rsi) >= 80 ? str.tostring(w_rsi, "#.0") + " 🔥" : nz(w_rsi) <= 30 ? str.tostring(w_rsi, "#.0") + " 🧊" : str.tostring(w_rsi, "#.0"),
                text_color=nz(w_rsi) >= 80 ? color.new(C_SELL, 0) : nz(w_rsi) <= 30 ? color.new(C_BUY, 0) : C_LIGHT,
                text_size=size.tiny)
 
     // 포지션
-    table.cell(dash, 0, 9, "포지션", text_color=C_DIM, text_size=size.tiny)
+    table.cell(dash, 0, 10, "포지션", text_color=C_DIM, text_size=size.tiny)
     float roi = in_pos and not na(e_price) ? (close - e_price) / e_price * 100 : na
     string pos_txt = not in_pos ? "— 대기"
                    : str.tostring(e_price, "#.0") + " → " + (roi >= 0 ? "+" : "") + str.tostring(roi, "#.1") + "%"
-    table.cell(dash, 1, 9, pos_txt,
+    table.cell(dash, 1, 10, pos_txt,
                text_color=not in_pos ? C_DIM : roi >= 0 ? color.new(C_BUY, 0) : color.new(C_SELL, 0),
                text_size=size.tiny)
 
@@ -189,8 +216,8 @@ if barstate.islast
     sma_gap = na(sma200) ? 0.0 : (close - sma200) / sma200 * 100
     string gap_txt = (sma_gap >= 0 ? "+" : "") + str.tostring(sma_gap, "#.1") + "%"
     gap_txt := sma_gap < 0 ? gap_txt + " 📉" : gap_txt
-    table.cell(dash, 0, 10, "SMA200", text_color=C_DIM, text_size=size.tiny)
-    table.cell(dash, 1, 10, gap_txt,
+    table.cell(dash, 0, 11, "SMA200", text_color=C_DIM, text_size=size.tiny)
+    table.cell(dash, 1, 11, gap_txt,
                text_color=sma_gap < 0 ? color.new(C_BUY, 0) : sma_gap > 20 ? color.new(C_SELL, 0) : C_LIGHT,
                text_size=size.tiny)
 
